@@ -1,17 +1,22 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-// Update these with values suitable for your network.
+#define SERIALDEBUG
+// #define MQTT
 
 const char *WIFI_SSID = "Lio - HS";
 const char *WIFI_PASSWORD = "l10_wifi";
-const char *MQTT_SERVER_ADDRESS = "192.168.43.197"; //Lio - HS
 
-const int ADC_FREQUENCY = 60;
+const char *MQTT_SERVER_ADDRESS = "192.168.43.197"; //Lio - HS
+const int MQTT_FREQUENCY = 60;
+
+const int ADC_FREQUENCY = 300;
 const int ADC_1_PIN = 34;
 const int ADC_2_PIN = 35;
 const int ADC_1_OFFSET = 1;
 const int ADC_2_OFFSET = 2;
+float _adc1Value = 0;
+float _adc2Value = 0;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -107,9 +112,37 @@ void setup()
 #endif
 }
 
-long last_millis = 0;
+void mqtt_loop()
+{
+  char msg1[50];
+  char msg2[50];
+
+  snprintf(msg1, 50, "%ld", _adc1Value);
+  snprintf(msg2, 50, "%ld", _adc2Value);
+
+  client.publish("sensor/1/measure/voltage", msg1);
+  client.publish("sensor/1/measure/current", msg2);
+}
+
+void adc_loop()
+{
+  int adc1 = analogRead(ADC_1_PIN);
+  int adc2 = analogRead(ADC_2_PIN);
+
+#ifdef SERIALDEBUG
+  Serial.print("ADC 1 (Voltage): ");
+  Serial.println(adc1);
+
+  Serial.print("ADC 2 (Current): ");
+  Serial.println(adc2);
+#endif
+}
+
 void loop()
 {
+  long mqtt_millis = 0;
+  long adc_millis = 0;
+
 #ifdef MQTT
   if (!client.connected())
   {
@@ -118,29 +151,19 @@ void loop()
   client.loop();
 #endif
 
-  long now = millis();
-  if (now - last_millis >= 1000 / ADC_FREQUENCY)
+  while (1)
   {
-    int adc1 = analogRead(ADC_1_PIN);
-    int adc2 = analogRead(ADC_2_PIN);
-
-    char msg1[50];
-    char msg2[50];
-
-    last_millis = now;
-
-    snprintf(msg1, 50, "%ld", adc1);
-    snprintf(msg2, 50, "%ld", adc2);
+    long now = millis();
+    if (now - adc_millis >= 1000 / ADC_FREQUENCY)
+    {
+      adc_loop();
+    }
 
 #ifdef MQTT
-    client.publish("sensor/1/measure/voltage", msg1);
-    client.publish("sensor/1/measure/current", msg2);
+    if (now - mqtt_millis >= 1000 / MQTT_FREQUENCY)
+    {
+      mqtt_loop();
+    }
 #endif
-
-    Serial.print("ADC 1 (Voltage): ");
-    Serial.println(adc1);
-
-    Serial.print("ADC 2 (Current): ");
-    Serial.println(adc2);
   }
 }
